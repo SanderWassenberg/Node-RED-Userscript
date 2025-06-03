@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.1
+// @version     1.2
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -40,10 +40,7 @@ window.addEventListener("keydown", e => {
 // This fixes:
 // On older versions of node-red the middle-mouse button will go into smooth-scroll mode which messes with how that is supposed to drag the canvas.
 window.addEventListener("mousedown", e => {
-  // TODO this does not seem to prevent the smooth scrolling thing when you middle click on exactly a node wire. figure out why.
-  if (e.button === 1) {
-    e.preventDefault();
-  }
+  if (e.button === 1) e.preventDefault();
 });
 
 // This fixes:
@@ -68,6 +65,24 @@ window.addEventListener("mousedown", e => {
     if (this.id === "red-ui-editor-shade") {
       add.call(this, "click", on_shade_click);
       delete divproto.addEventListener; // Only deletes the override in divproto, call now passes through to EventTarget again.
+    }
+    add.apply(this, arguments);
+  }
+}
+
+// This fixes:
+// When you middle click on a wire between nodes it goes into smooth scrolling mode and nobody wants that.
+{
+  const add = EventTarget.prototype.addEventListener;
+  const pathproto = SVGPathElement.prototype;
+  pathproto.addEventListener = function() { // Do not change to arrow function since we use 'this'
+    if (!this.dataset.fixed && arguments[0] === "mousedown" && this.matches(".red-ui-flow-link-path")) {
+      this.dataset.fixed = 1;
+      // We do this event, but not when it was middleclick.
+      add.call(this, "mousedown", e => {
+        if (e.button !== 1) arguments[1](e);
+      });
+      return;
     }
     add.apply(this, arguments);
   }
