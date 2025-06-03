@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.0
+// @version     1.1
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -40,6 +40,7 @@ window.addEventListener("keydown", e => {
 // This fixes:
 // On older versions of node-red the middle-mouse button will go into smooth-scroll mode which messes with how that is supposed to drag the canvas.
 window.addEventListener("mousedown", e => {
+  // TODO this does not seem to prevent the smooth scrolling thing when you middle click on exactly a node wire. figure out why.
   if (e.button === 1) {
     e.preventDefault();
   }
@@ -76,11 +77,25 @@ window.addEventListener("mousedown", e => {
  * ADDITIONS
  * */
 
-const tmpl = document.createElement("template");
-function make_html(html) {
-  tmpl.innerHTML = html;
-  return tmpl.content.cloneNode(true).firstElementChild; // assume the html had a single root element.
-}
+const make_html = (()=>{
+  let tmpl;
+
+  return function(html) {
+    tmpl ??= document.createElement("template");
+    tmpl.innerHTML = html;
+    return tmpl.content.cloneNode(true).firstElementChild; // assume the html had a single root element.
+  }
+})();
+
+const make_svg_elem = (()=>{
+  let tmpl;
+
+  return function(svg) {
+    tmpl ??= document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    tmpl.innerHTML = svg;
+    return tmpl.firstElementChild.cloneNode(true); // assume the svg had a single root element.
+  }
+})();
 
 // This adds:
 // Names of palettes in the palette manager and Node Help list will have a right-click-menu where you can go to their website.
@@ -153,4 +168,43 @@ function make_html(html) {
   function open(menu) {
     menu.style.display = "block";
   }
+}
+
+// This adds:
+// When you click on an an output of a node with multiple outputs, it will tell you what the number/index of that output is.
+{
+  let obj, index_elem, num_elem;
+  let timeout = 0;
+  window.addEventListener("click", e => {
+    if (e.target.matches("rect.red-ui-flow-port")) {
+      let elem = e.target.parentElement;
+      let index = 0;
+      while (true) {
+        elem = elem.previousElementSibling;
+        if (!elem?.matches("g.red-ui-flow-port-output")) break;
+        index++;
+      }
+
+      // Disable for nodes with 1 output
+      if (index === 0 && !e.target.parentElement.nextElementSibling) return;
+
+      if (!obj) {
+         obj = make_svg_elem(`
+<foreignObject width="120" height="22" x="15" y="-6.3" style="pointer-events: none;">
+  <div xmlns="http://www.w3.org/1999/xhtml" style="background-color:#0004;padding: 0 5px 2px;width: fit-content;border-radius: 3px;color: var(--red-ui-primary-text-color);">
+    <b style="font-family: Consolas;">[<span id="index">4</span>]</b> Output <span id="num">5</span>
+  </div>
+</foreignObject>
+        `);
+        index_elem = obj.querySelector("#index");
+        num_elem   = obj.querySelector("#num");
+      }
+
+      clearTimeout(timeout);
+      index_elem.innerText = index;
+      num_elem.innerText   = index + 1;
+      e.target.parentElement.appendChild(obj);
+      timeout = setTimeout(() => obj.remove(), 5000);
+    }
+  });
 }
