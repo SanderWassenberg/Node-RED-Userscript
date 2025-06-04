@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.2
+// @version     1.3
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -12,15 +12,16 @@
 if (document.title !== "Node-RED") return;
 console.log("%cRunning Sander's custom Node-RED script", "color:cyan");
 
-/*
- * FIXES
- * */
+//
+// FIXES
+//
 
-// This fixes:
+// This fixes/adds:
 // I expect Ctrl-scroll to zoom into the node canvas, but instead the browser scales the page.
 window.addEventListener("wheel", e => {
   if (e.ctrlKey) {
-    e.preventDefault(); // Stops the browser from scaling the page
+    // Stops the browser from scaling the page
+    e.preventDefault();
 
     // Replace with actually zooming the canvas
     if (e.wheelDeltaY > 0) {
@@ -43,6 +44,33 @@ window.addEventListener("mousedown", e => {
   if (e.button === 1) e.preventDefault();
 });
 
+const addEvLi = EventTarget.prototype.addEventListener;
+
+// This fixes:
+// Dragging the canvas with middle click does not work when you start your click 'n drag on top of a wire
+// (Despite the anti-smooth scrolling fix above, it actually smooth-scrolls instead)
+// This seems like an actual bug in Node-RED.
+{
+  SVGPathElement.prototype.addEventListener = function(type, callback, optns) { // Do not change to arrow function since we use 'this'
+    if (!this.classList.contains("red-ui-flow-link-path")) {
+      // We don't care about this object, stop intercepting
+      this.addEventListener = addEvLi;
+      addEvLi.apply(this, arguments);
+    } else if (type === "mousedown") {
+      // This is the callback we're after.
+      // The reason this callback makes dragging the canvas with middle-click stop working is that it calls e.stopPropagation (or stopImmediatePropagation).
+      // The funcitonality for dragging the canvas happens in an eventlistener higher up the DOM tree, but with this event not bubbling up it cannot get there.
+      // To fix, we make a wrapper for the callback that blocks it from running on middle clicks. This is fine since fact that it even captured middle clicks at all seems to be unintentional.
+      this.addEventListener = addEvLi;
+      addEvLi.call(this, "mousedown", function(e) {
+        if (e.button !== 1) callback(e);
+      }, optns);
+    } else {
+      addEvLi.apply(this, arguments);
+    }
+  }
+}
+
 // This fixes:
 // When you are modifying a function node and you click and drag to select some code,
 // releasing the cursor in the shaded area over the canvas interprets that as a click there,
@@ -54,43 +82,23 @@ window.addEventListener("mousedown", e => {
     }
   };
 
-  // Override addEvenListener for divs to ensure we get to add an event to #red-ui-editor-shade BEFORE anyone else.
+  // Override addEventListener for divs to ensure we get to add an event to #red-ui-editor-shade BEFORE anyone else.
   // Reason:
   // I tried adding this listener as soon as the shade elem appears in the DOM by using a MutationObserver, but even at that point the
   // click event that makes it close the side panel is already added, any event listener we add will only fire after that one.
   // We have to "just add the event first" if we want to block other events.
-  const add = EventTarget.prototype.addEventListener;
-  const divproto = HTMLDivElement.prototype;
-  divproto.addEventListener = function() { // Do not change to arrow function since we use 'this'
+  HTMLDivElement.prototype.addEventListener = function() { // Do not change to arrow function since we use 'this'
     if (this.id === "red-ui-editor-shade") {
-      add.call(this, "click", on_shade_click);
-      delete divproto.addEventListener; // Only deletes the override in divproto, call now passes through to EventTarget again.
+      addEvLi.call(this, "click", on_shade_click);
+      delete HTMLDivElement.prototype.addEventListener; // Only deletes the override in div.proto, call now passes through to EventTarget again.
     }
-    add.apply(this, arguments);
+    addEvLi.apply(this, arguments);
   }
 }
 
-// This fixes:
-// When you middle click on a wire between nodes it goes into smooth scrolling mode and nobody wants that.
-{
-  const add = EventTarget.prototype.addEventListener;
-  const pathproto = SVGPathElement.prototype;
-  pathproto.addEventListener = function() { // Do not change to arrow function since we use 'this'
-    if (!this.dataset.fixed && arguments[0] === "mousedown" && this.matches(".red-ui-flow-link-path")) {
-      this.dataset.fixed = 1;
-      // We do this event, but not when it was middleclick.
-      add.call(this, "mousedown", e => {
-        if (e.button !== 1) arguments[1](e);
-      });
-      return;
-    }
-    add.apply(this, arguments);
-  }
-}
-
-/*
- * ADDITIONS
- * */
+//
+// ADDITIONS
+//
 
 const make_html = (()=>{
   let tmpl;
@@ -98,7 +106,7 @@ const make_html = (()=>{
   return function(html) {
     tmpl ??= document.createElement("template");
     tmpl.innerHTML = html;
-    return tmpl.content.cloneNode(true).firstElementChild; // assume the html had a single root element.
+    return tmpl.content.firstElementChild.cloneNode(true); // assume the html had a single root element.
   }
 })();
 
@@ -115,22 +123,15 @@ const make_svg_elem = (()=>{
 // This adds:
 // Names of palettes in the palette manager and Node Help list will have a right-click-menu where you can go to their website.
 {
-  // Here we copy the page's own style style by using the same classes as the right-click menu inside the canvas.
-  const right_click_menu = make_html(`<ul class="red-ui-menu-dropdown red-ui-menu-dropdown-noicons" style="position:absolute;padding:0;">
-    <li>
-      <a target="_blank" tabindex="-1" href="#" style="text-decoration:none" id="node-red-link">
-        <span class="red-ui-menu-label">Node-RED library page</span>
-      </a>
-    </li>
-    <li>
-      <a target="_blank" tabindex="-1" href="#" style="text-decoration:none" id="npm-link" >
-        <span class="red-ui-menu-label">NPM package page</span>
-      </a>
-    </li>
-  </ul>`);
-  const node_red_link = right_click_menu.querySelector("#node-red-link");
-  const npm_link      = right_click_menu.querySelector("#npm-link");
-  document.body.prepend(right_click_menu);
+  let right_click_menu, node_red_link, npm_link;
+  let node_red_link_disabled = false;
+
+  function close() {
+    right_click_menu.style.display = "none";
+  }
+  function open() {
+    right_click_menu.style.display = "block";
+  }
 
   window.addEventListener("contextmenu", e => {
     // elem.closest() goes up all parents of the element and returns the first to match the selector.
@@ -146,14 +147,48 @@ const make_svg_elem = (()=>{
     if (!span) return;
 
     const module_name = span.innerText;
-    if (module_name === "node-red" || module_name === "Subflows") return;
+    if (module_name === "Subflows") return;
 
     e.preventDefault(); // Do not show the regular right-click menu
 
-    node_red_link.href = `https://flows.nodered.org/node/${module_name}`;
-    npm_link.href      = `https://www.npmjs.com/package/${module_name}`;
+    if (!right_click_menu) {
+        // Here we copy the page's own style style by using the same classes as the right-click menu inside the canvas.
+      right_click_menu = make_html(
+`
+<ul class="red-ui-menu-dropdown red-ui-menu-dropdown-noicons" style="position:absolute;padding:0;">
+  <li>
+    <a target="_blank" tabindex="-1" href="#" style="text-decoration:none" id="node-red-link">
+      <span class="red-ui-menu-label">Node-RED library page</span>
+    </a>
+  </li>
+  <li>
+    <a target="_blank" tabindex="-1" href="#" style="text-decoration:none" id="npm-link" >
+      <span class="red-ui-menu-label">NPM package page</span>
+    </a>
+  </li>
+</ul>`);
 
-    open(right_click_menu); // make visible first so that offsetWidth/Height work.
+      node_red_link = right_click_menu.querySelector("#node-red-link");
+      npm_link      = right_click_menu.querySelector("#npm-link");
+      node_red_link.addEventListener("click", function(e) {
+        if (this.parentElement.classList.contains("disabled")) {
+          e.preventDefault();
+          e.stopPropagation(); // Makes the menu not close when you click the disabled button
+        }
+      });
+      document.body.prepend(right_click_menu);
+    }
+
+    npm_link.href = `https://www.npmjs.com/package/${module_name}`;
+    node_red_link.href = `https://flows.nodered.org/node/${module_name}`;
+
+    if (module_name === "node-red") { // node-red has no library page on its own website.
+      node_red_link.parentElement.classList.add("disabled");
+    } else {
+      node_red_link.parentElement.classList.remove("disabled");
+    }
+
+    open(); // make visible first so that offsetWidth/Height work.
 
     const left = Math.min(window.innerWidth - right_click_menu.offsetWidth, e.clientX);
     const top = Math.min(window.innerHeight - right_click_menu.offsetHeight, e.clientY);
@@ -166,23 +201,16 @@ const make_svg_elem = (()=>{
     const options = { signal: contr.signal };
     const close_menu = e => {
       if (e.constructor === MouseEvent && e.button === 0) return;
-      close(right_click_menu);
+      close();
       contr.abort();
     }
     window.addEventListener("click",     close_menu, options);
     window.addEventListener("mousedown", close_menu, options);
     // We *should* ony need the mousedown event, but links and buttons perform their actions when the
     // mouse goes UP - and if the link is hidden the browser refuses to perform their action -
-    // so for left-clicks we wait until the click event fires before hiding the menu. We could use mouseup, but
+    // so for left-clicks we wait until the click event fires before hiding the menu. We could use mouse*up*, but
     // then if you middle click-and-drag to move the canvas the menu sticks around for a long time, and we want it to hide instantly.
   });
-
-  function close(menu) {
-    menu.style.display = "none";
-  }
-  function open(menu) {
-    menu.style.display = "block";
-  }
 }
 
 // This adds:
@@ -204,13 +232,14 @@ const make_svg_elem = (()=>{
       if (index === 0 && !e.target.parentElement.nextElementSibling) return;
 
       if (!obj) {
-         obj = make_svg_elem(`
+         obj = make_svg_elem(
+`
 <foreignObject width="120" height="22" x="15" y="-6.3" style="pointer-events: none;">
   <div xmlns="http://www.w3.org/1999/xhtml" style="background-color:#0004;padding: 0 5px 2px;width: fit-content;border-radius: 3px;color: var(--red-ui-primary-text-color);">
     <b style="font-family: Consolas;">[<span id="index">4</span>]</b> Output <span id="num">5</span>
   </div>
-</foreignObject>
-        `);
+</foreignObject>`);
+
         index_elem = obj.querySelector("#index");
         num_elem   = obj.querySelector("#num");
       }
