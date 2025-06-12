@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.3
+// @version     1.4
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -94,6 +94,46 @@ const addEvLi = EventTarget.prototype.addEventListener;
     }
     addEvLi.apply(this, arguments);
   }
+}
+
+// This fixes:
+// With OPC UA node, the adress space is an annoying small window, but it is resizable, so you have to resize it manually every time.
+// Now it automatically fills the sidebar. 
+{
+  const editor_selector = "#node-input-func-editor-addressSpaceScript"
+  let prev_height = window.innerHeight;
+  let timeout = 0;
+  let editor;
+
+  function make_fit() {
+    const parent = editor.closest("#dialog-form");
+    const parent_rect = parent.getBoundingClientRect();
+    const editor_rect = editor.getBoundingClientRect();
+    const distFromTop = editor_rect.top - parent_rect.top;
+    editor.style.height = `${parent_rect.height - distFromTop + 10}px`;
+  }
+
+  window.addEventListener("click", e => {
+    if (e.target.closest("a[href='#compact-server-tab-ass']")) {
+      editor = document.querySelector(editor_selector);
+      make_fit();
+    }
+  });
+
+
+  window.addEventListener("resize", e => {
+    editor = document.querySelector(editor_selector);
+    const editor_is_shown = editor?.offsetParent;
+    if (editor_is_shown) {
+      const new_height = window.innerHeight;
+      if (new_height !== prev_height) {
+        prev_height = new_height;
+
+        clearTimeout(timeout);
+        timeout = setTimeout(make_fit, 400);
+      }
+    }
+  });
 }
 
 //
