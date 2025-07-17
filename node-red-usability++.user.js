@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.4
+// @version     1.4.1
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -98,7 +98,7 @@ const addEvLi = EventTarget.prototype.addEventListener;
 
 // This fixes:
 // With OPC UA node, the adress space is an annoying small window, but it is resizable, so you have to resize it manually every time.
-// Now it automatically fills the sidebar. 
+// Now it automatically fills the sidebar.
 {
   const editor_selector = "#node-input-func-editor-addressSpaceScript"
   let prev_height = window.innerHeight;
@@ -275,7 +275,7 @@ const make_svg_elem = (()=>{
          obj = make_svg_elem(
 `
 <foreignObject width="120" height="22" x="15" y="-6.3" style="pointer-events: none;">
-  <div xmlns="http://www.w3.org/1999/xhtml" style="background-color:#0004;padding: 0 5px 2px;width: fit-content;border-radius: 3px;color: var(--red-ui-primary-text-color);">
+  <div xmlns="http://www.w3.org/1999/xhtml" style="background-color:#aaaa;padding: 0 5px 2px;width: fit-content;border-radius: 3px;color: #111;">
     <b style="font-family: Consolas;">[<span id="index">4</span>]</b> Output <span id="num">5</span>
   </div>
 </foreignObject>`);
