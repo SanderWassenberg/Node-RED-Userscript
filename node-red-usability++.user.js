@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.4.1
+// @version     1.05
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -139,6 +139,19 @@ const addEvLi = EventTarget.prototype.addEventListener;
 //
 // ADDITIONS
 //
+
+// Change pointer style when hovering some elements
+// I don't like the 'not-allowed' cursor in the export dialog.
+// The pointer should only signal that the text is not editable,
+// but with the current symbol it feels like I shouldn't even be able
+// to select the text, which IS allowed and I DO want to do that.
+const my_style = new CSSStyleSheet();
+my_style.replace(`
+:is(.red-ui-editor, .red-ui-editor-dialog) :is(input, select, textarea)[readonly] {
+  cursor: default;
+}
+`);
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, my_style];
 
 const make_html = (()=>{
   let tmpl;
