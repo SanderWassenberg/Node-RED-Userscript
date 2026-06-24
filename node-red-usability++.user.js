@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.05
+// @version     1.06
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -47,12 +47,12 @@ window.addEventListener("mousedown", e => {
 const addEvLi = EventTarget.prototype.addEventListener;
 
 // This fixes:
-// Dragging the canvas with middle click does not work when you start your click 'n drag on top of a wire
-// (Despite the anti-smooth scrolling fix above, it actually smooth-scrolls instead)
+// Dragging the canvas with middle click does not work when you start your click 'n drag on top of a wire or node in/outputs
+// (Despite the anti-smooth scrolling fix above, it actually smooth-scrolls instead on a wire, or creates a new wire on in/outputs)
 // This seems like an actual bug in Node-RED.
 {
-  SVGPathElement.prototype.addEventListener = function(type, callback, optns) { // Do not change to arrow function since we use 'this'
-    if (!this.classList.contains("red-ui-flow-link-path")) {
+  const intercept = (class_match) => function(type, callback, optns) { // Do not change to arrow function since we use 'this'
+    if (!this.classList.contains(class_match)) {
       // We don't care about this object, stop intercepting
       this.addEventListener = addEvLi;
       addEvLi.apply(this, arguments);
@@ -63,12 +63,14 @@ const addEvLi = EventTarget.prototype.addEventListener;
       // To fix, we make a wrapper for the callback that blocks it from running on middle clicks. This is fine since fact that it even captured middle clicks at all seems to be unintentional.
       this.addEventListener = addEvLi;
       addEvLi.call(this, "mousedown", function(e) {
-        if (e.button !== 1) callback(e);
+        if (e.button !== 1) callback.call(this, e);
       }, optns);
     } else {
       addEvLi.apply(this, arguments);
     }
-  }
+  };
+  SVGRectElement.prototype.addEventListener = intercept("red-ui-flow-port");
+  SVGPathElement.prototype.addEventListener = intercept("red-ui-flow-link-path");
 }
 
 // This fixes:
