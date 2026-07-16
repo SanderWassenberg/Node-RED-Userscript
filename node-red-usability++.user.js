@@ -4,7 +4,7 @@
 // @match       http://*/*
 // @match       https://*/*
 // @grant       none
-// @version     1.06
+// @version     1.07
 // @author      Sander
 // @description Fix some annoyances, add some features.
 // ==/UserScript==
@@ -15,22 +15,42 @@ console.log("%cRunning Sander's custom Node-RED script", "color:cyan");
 //
 // FIXES
 //
-
+//
 // This fixes/adds:
-// I expect Ctrl-scroll to zoom into the node canvas, but instead the browser scales the page.
-window.addEventListener("wheel", e => {
-  if (e.ctrlKey) {
-    // Stops the browser from scaling the page
-    e.preventDefault();
+// I expect Ctrl-scroll to zoom into the node canvas, but instead the browser scales the page (v5+ add this).
+function add_ctrl_scroll() {
+  window.addEventListener("wheel", e => {
+    if (e.ctrlKey) {
+      // Stops the browser from scaling the page
+      e.preventDefault();
 
-    // Replace with actually zooming the canvas
-    if (e.wheelDeltaY > 0) {
-      document.getElementById("red-ui-view-zoom-in")?.click();
-    } else if (e.wheelDeltaY < 0) {
-      document.getElementById("red-ui-view-zoom-out")?.click();
+      // Replace with actually zooming the canvas
+      if (e.wheelDeltaY > 0) {
+        document.getElementById("red-ui-view-zoom-in")?.click();
+      } else if (e.wheelDeltaY < 0) {
+        document.getElementById("red-ui-view-zoom-out")?.click();
+      }
     }
-  }
-}, { passive: false }); // passive:false REALLY important, otherwise browser ignores the preventDefault call.
+  }, { passive: false }); // passive:false REALLY important, otherwise browser ignores the preventDefault call.
+}
+
+{
+  let interval = setInterval(()=>{ // ehh could use mutationobserver for this but bleh
+    const v_elem = document.querySelector("#menu-item-node-red-version");
+    if (v_elem) {
+      clearInterval(interval);
+      let text = v_elem.textContent;
+      if (text[0] === "v") text = text.slice(1);
+      const version = text.split(".").map(n => Number(n))
+
+      if (version[0] <= 4) {
+        add_ctrl_scroll();
+      }
+    }
+  }, 500);
+}
+
+
 
 // This fixes:
 // Pressing Ctrl-S from muscle memory (cuz I'm editing code) pulls up a dialog to save the page as HTML, which I never want.
@@ -59,7 +79,7 @@ const addEvLi = EventTarget.prototype.addEventListener;
     } else if (type === "mousedown") {
       // This is the callback we're after.
       // The reason this callback makes dragging the canvas with middle-click stop working is that it calls e.stopPropagation (or stopImmediatePropagation).
-      // The funcitonality for dragging the canvas happens in an eventlistener higher up the DOM tree, but with this event not bubbling up it cannot get there.
+      // The functionality for dragging the canvas happens in an eventlistener higher up the DOM tree, but with this event not bubbling up it cannot get there.
       // To fix, we make a wrapper for the callback that blocks it from running on middle clicks. This is fine since fact that it even captured middle clicks at all seems to be unintentional.
       this.addEventListener = addEvLi;
       addEvLi.call(this, "mousedown", function(e) {
@@ -69,6 +89,7 @@ const addEvLi = EventTarget.prototype.addEventListener;
       addEvLi.apply(this, arguments);
     }
   };
+
   SVGRectElement.prototype.addEventListener = intercept("red-ui-flow-port");
   SVGPathElement.prototype.addEventListener = intercept("red-ui-flow-link-path");
 }
@@ -287,8 +308,7 @@ const make_svg_elem = (()=>{
       if (index === 0 && !e.target.parentElement.nextElementSibling) return;
 
       if (!obj) {
-         obj = make_svg_elem(
-`
+         obj = make_svg_elem(`
 <foreignObject width="120" height="22" x="15" y="-6.3" style="pointer-events: none;">
   <div xmlns="http://www.w3.org/1999/xhtml" style="background-color:#aaaa;padding: 0 5px 2px;width: fit-content;border-radius: 3px;color: #111;">
     <b style="font-family: Consolas;">[<span id="index">4</span>]</b> Output <span id="num">5</span>
